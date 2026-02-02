@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import io from "socket.io-client";
 
-const socket = io("http://localhost:4000");
+const socket = io("https://livechat-backend-production.up.railway.app");
 
 export default function AgentPage() {
   const [mounted, setMounted] = useState(false);
@@ -13,19 +13,22 @@ export default function AgentPage() {
 
   useEffect(() => setMounted(true), []);
 
-  useEffect(() => {
-    if (!mounted) return;
+useEffect(() => {
+  if (!mounted) return;
 
-    const saved = localStorage.getItem("agent_chat_list");
-    if (saved) setChats(JSON.parse(saved));
+  const saved = localStorage.getItem("agent_chat_list");
+  if (saved) setChats(JSON.parse(saved));
 
-    socket.on("chat_list", (data) => {
-      setChats(data);
-      localStorage.setItem("agent_chat_list", JSON.stringify(data));
-    });
+  socket.on("chat_list", (data) => {
+    setChats(data);
+    localStorage.setItem("agent_chat_list", JSON.stringify(data));
+  });
 
-    return () => socket.off("chat_list");
-  }, [mounted]);
+  return () => {
+    socket.off("chat_list"); // ✅ returns void
+  };
+}, [mounted]);
+
 
   if (!mounted) return null;
 
