@@ -35,9 +35,10 @@ export default function ChatBot() {
 
   useEffect(() => {
     if (!socket) {
-      socket = io("https://livechat-backend-production.up.railway.app", {
-        transports: ["websocket"]
-      });
+    socket = io(
+  "https://livechat-backend-production.up.railway.app",
+  { transports: ["websocket"] }
+);
     }
 
     if (!started.current) {
