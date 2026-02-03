@@ -12,9 +12,9 @@ type Message = {
 let socket: Socket | null = null;
 
 function getDevice() {
+  if (typeof navigator === "undefined") return "Unknown";
   const ua = navigator.userAgent.toLowerCase();
-  if (ua.includes("mobile")) return "Mobile";
-  return "Desktop";
+  return ua.includes("mobile") ? "Mobile" : "Desktop";
 }
 
 export default function ChatBot() {
@@ -26,27 +26,17 @@ export default function ChatBot() {
   const startedRef = useRef(false);
 
   useEffect(() => {
-    // ✅ guard for browser
     if (typeof window === "undefined") return;
 
-    // ✅ get userId safely
     let userId = localStorage.getItem("livechat_user_id");
     if (!userId) {
       userId = crypto.randomUUID();
       localStorage.setItem("livechat_user_id", userId);
     }
 
-    // ✅ init socket ONCE
     if (!socket) {
-      const url = process.env.NEXT_PUBLIC_SOCKET_URL;
-      if (!url) {
-        console.error("❌ NEXT_PUBLIC_SOCKET_URL missing");
-        return;
-      }
-
-      socket = io(url, {
-        transports: ["websocket"]
-      });
+      const url = process.env.NEXT_PUBLIC_SOCKET_URL!;
+      socket = io(url, { transports: ["websocket"] });
     }
 
     if (!startedRef.current) {
@@ -61,26 +51,12 @@ export default function ChatBot() {
         device: getDevice()
       });
 
-      const handleRouteChange = () => {
-        socket?.emit("user_activity", {
-          userId,
-          page: window.location.pathname,
-          device: getDevice()
-        });
-      };
-
-      window.addEventListener("popstate", handleRouteChange);
-
       startedRef.current = true;
-
-      return () => {
-        window.removeEventListener("popstate", handleRouteChange);
-        socket?.disconnect(); // ✅ cleanup
-        socket = null;
-      };
     }
 
-    socket.on("chat_history", setMessages);
+    socket.on("chat_history", (data: Message[]) => {
+      setMessages(data);
+    });
 
     socket.on("agent_reply", (text: string) => {
       setMessages((prev) => [
@@ -102,18 +78,23 @@ export default function ChatBot() {
   function send() {
     if (!input.trim() || !socket) return;
 
+    const userId = localStorage.getItem("livechat_user_id");
+
     setMessages((prev) => [
       ...prev,
       { id: Date.now(), sender: "user", text: input }
     ]);
 
-    socket.emit("user_message", input);
+    socket.emit("user_message", {
+      userId,
+      text: input
+    });
+
     setInput("");
   }
 
   return (
     <>
-      {/* Floating Button */}
       <button
         onClick={() => setOpen(!open)}
         style={{

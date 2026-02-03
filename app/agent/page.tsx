@@ -16,55 +16,39 @@ type Chat = {
 export default function AgentPage() {
   const socketRef = useRef<Socket | null>(null);
 
-  const [mounted, setMounted] = useState(false);
   const [chats, setChats] = useState<Chat[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [text, setText] = useState("");
 
-  /* ================= CLIENT MOUNT ================= */
   useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  /* ================= SOCKET INIT ================= */
-  useEffect(() => {
-    if (!mounted) return;
-
-    const url = process.env.NEXT_PUBLIC_SOCKET_URL;
-    if (!url) {
-      console.error("❌ NEXT_PUBLIC_SOCKET_URL not set");
-      return;
-    }
-
-    const socket = io(url, {
-      transports: ["websocket"]
-    });
-
+    const url = process.env.NEXT_PUBLIC_SOCKET_URL!;
+    const socket = io(url, { transports: ["websocket"] });
     socketRef.current = socket;
 
-    // Restore from localStorage
-    const saved = localStorage.getItem("agent_chat_list");
-    if (saved) {
-      setChats(JSON.parse(saved));
-    }
+    socket.emit("agent_join");
 
     socket.on("chat_list", (data: Chat[]) => {
       setChats(data);
       localStorage.setItem("agent_chat_list", JSON.stringify(data));
     });
 
-    return () => {
-      socket.off("chat_list");
-      socket.disconnect();
-      socketRef.current = null;
-    };
-  }, [mounted]);
+    socket.on("new_message", ({ userId, message }) => {
+      setChats((prev) =>
+        prev.map((c) =>
+          c.userId === userId
+            ? { ...c, messages: [...c.messages, message] }
+            : c
+        )
+      );
+    });
 
-  if (!mounted) return null;
+    return () => {
+      socket.disconnect();
+    };
+  }, []);
 
   const activeChat = chats.find((c) => c.userId === activeId);
 
-  /* ================= SEND MESSAGE ================= */
   function sendMessage() {
     if (!text.trim() || !activeChat || !socketRef.current) return;
 
@@ -73,19 +57,24 @@ export default function AgentPage() {
       text
     });
 
+    setChats((prev) =>
+      prev.map((c) =>
+        c.userId === activeChat.userId
+          ? {
+              ...c,
+              messages: [...c.messages, { sender: "agent", text }]
+            }
+          : c
+      )
+    );
+
     setText("");
   }
 
-  /* ================= UI ================= */
   return (
-    <div style={{ display: "flex", height: "100vh", fontFamily: "Arial" }}>
-      {/* LEFT: VISITOR LIST */}
+    <div style={{ display: "flex", height: "100vh" }}>
       <div style={{ width: 300, borderRight: "1px solid #ddd" }}>
         <h3 style={{ padding: 12 }}>Visitors</h3>
-
-        {chats.length === 0 && (
-          <p style={{ padding: 12, color: "#777" }}>No visitors</p>
-        )}
 
         {chats.map((c) => (
           <div
@@ -107,7 +96,6 @@ export default function AgentPage() {
         ))}
       </div>
 
-      {/* RIGHT: CHAT */}
       <div style={{ flex: 1, padding: 20 }}>
         {activeChat ? (
           <>
@@ -123,7 +111,7 @@ export default function AgentPage() {
               }}
             >
               {activeChat.messages.map((m, i) => (
-                <div key={i} style={{ marginBottom: 6 }}>
+                <div key={i}>
                   <b>{m.sender}:</b> {m.text}
                 </div>
               ))}
@@ -141,7 +129,7 @@ export default function AgentPage() {
             </div>
           </>
         ) : (
-          <p>Select a visitor to start chatting</p>
+          <p>Select a visitor</p>
         )}
       </div>
     </div>
