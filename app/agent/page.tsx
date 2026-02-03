@@ -1,90 +1,147 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import io from "socket.io-client";
+import { useEffect, useRef, useState } from "react";
+import { io, Socket } from "socket.io-client";
 
-const socket = io(
-  "https://livechat-backend-production.up.railway.app",
-  { transports: ["websocket"] }
-);
+type Chat = {
+  userId: string;
+  user: { name: string };
+  messages: { sender: string; text: string }[];
+  status: "online" | "offline";
+  page?: string;
+  device?: string;
+  country?: string;
+};
 
 export default function AgentPage() {
+  const socketRef = useRef<Socket | null>(null);
+
   const [mounted, setMounted] = useState(false);
-  const [chats, setChats] = useState<any[]>([]);
+  const [chats, setChats] = useState<Chat[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [text, setText] = useState("");
 
-  useEffect(() => setMounted(true), []);
+  /* ================= CLIENT MOUNT ================= */
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
-useEffect(() => {
-  if (!mounted) return;
+  /* ================= SOCKET INIT ================= */
+  useEffect(() => {
+    if (!mounted) return;
 
-  const saved = localStorage.getItem("agent_chat_list");
-  if (saved) setChats(JSON.parse(saved));
+    const url = process.env.NEXT_PUBLIC_SOCKET_URL;
+    if (!url) {
+      console.error("❌ NEXT_PUBLIC_SOCKET_URL not set");
+      return;
+    }
 
-  socket.on("chat_list", (data) => {
-    setChats(data);
-    localStorage.setItem("agent_chat_list", JSON.stringify(data));
-  });
+    const socket = io(url, {
+      transports: ["websocket"]
+    });
 
-  return () => {
-    socket.off("chat_list"); // ✅ returns void
-  };
-}, [mounted]);
+    socketRef.current = socket;
 
+    // Restore from localStorage
+    const saved = localStorage.getItem("agent_chat_list");
+    if (saved) {
+      setChats(JSON.parse(saved));
+    }
+
+    socket.on("chat_list", (data: Chat[]) => {
+      setChats(data);
+      localStorage.setItem("agent_chat_list", JSON.stringify(data));
+    });
+
+    return () => {
+      socket.off("chat_list");
+      socket.disconnect();
+      socketRef.current = null;
+    };
+  }, [mounted]);
 
   if (!mounted) return null;
 
-  const activeChat = chats.find(c => c.userId === activeId);
+  const activeChat = chats.find((c) => c.userId === activeId);
 
+  /* ================= SEND MESSAGE ================= */
+  function sendMessage() {
+    if (!text.trim() || !activeChat || !socketRef.current) return;
+
+    socketRef.current.emit("agent_message", {
+      userId: activeChat.userId,
+      text
+    });
+
+    setText("");
+  }
+
+  /* ================= UI ================= */
   return (
     <div style={{ display: "flex", height: "100vh", fontFamily: "Arial" }}>
+      {/* LEFT: VISITOR LIST */}
       <div style={{ width: 300, borderRight: "1px solid #ddd" }}>
         <h3 style={{ padding: 12 }}>Visitors</h3>
-        {chats.map(c => (
+
+        {chats.length === 0 && (
+          <p style={{ padding: 12, color: "#777" }}>No visitors</p>
+        )}
+
+        {chats.map((c) => (
           <div
             key={c.userId}
             onClick={() => setActiveId(c.userId)}
             style={{
               padding: 10,
               cursor: "pointer",
-              background: activeId === c.userId ? "#e0f2fe" : "#fff"
+              background: activeId === c.userId ? "#e0f2fe" : "#fff",
+              borderBottom: "1px solid #eee"
             }}
           >
             {c.status === "online" ? "🟢" : "🔴"} {c.user.name}
             <div style={{ fontSize: 12, color: "#555" }}>
-              📄 {c.page} <br />
-              💻 {c.device} 🌍 {c.country}
+              📄 {c.page || "-"} <br />
+              💻 {c.device || "-"} 🌍 {c.country || "-"}
             </div>
           </div>
         ))}
       </div>
 
+      {/* RIGHT: CHAT */}
       <div style={{ flex: 1, padding: 20 }}>
         {activeChat ? (
           <>
-            <h3>{activeChat.user.name}</h3>
-            <div style={{ height: 300, overflowY: "auto" }}>
-              {activeChat.messages.map((m: any, i: number) => (
-                <div key={i}>
+            <h3>Chat with {activeChat.user.name}</h3>
+
+            <div
+              style={{
+                height: "60vh",
+                border: "1px solid #ddd",
+                padding: 10,
+                overflowY: "auto",
+                marginBottom: 10
+              }}
+            >
+              {activeChat.messages.map((m, i) => (
+                <div key={i} style={{ marginBottom: 6 }}>
                   <b>{m.sender}:</b> {m.text}
                 </div>
               ))}
             </div>
-            <input
-              value={text}
-              onChange={e => setText(e.target.value)}
-              onKeyDown={e =>
-                e.key === "Enter" &&
-                socket.emit("agent_message", {
-                  userId: activeChat.userId,
-                  text
-                })
-              }
-            />
+
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+                placeholder="Reply…"
+                style={{ flex: 1, padding: 8 }}
+              />
+              <button onClick={sendMessage}>Send</button>
+            </div>
           </>
         ) : (
-          <p>Select a visitor</p>
+          <p>Select a visitor to start chatting</p>
         )}
       </div>
     </div>

@@ -11,15 +11,6 @@ type Message = {
 
 let socket: Socket | null = null;
 
-function getUserId() {
-  let id = localStorage.getItem("livechat_user_id");
-  if (!id) {
-    id = crypto.randomUUID();
-    localStorage.setItem("livechat_user_id", id);
-  }
-  return id;
-}
-
 function getDevice() {
   const ua = navigator.userAgent.toLowerCase();
   if (ua.includes("mobile")) return "Mobile";
@@ -30,41 +21,72 @@ export default function ChatBot() {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
+
   const bottomRef = useRef<HTMLDivElement | null>(null);
-  const started = useRef(false);
+  const startedRef = useRef(false);
 
   useEffect(() => {
-    if (!socket) {
-    socket = io(
-  "https://livechat-backend-production.up.railway.app",
-  { transports: ["websocket"] }
-);
+    // ✅ guard for browser
+    if (typeof window === "undefined") return;
+
+    // ✅ get userId safely
+    let userId = localStorage.getItem("livechat_user_id");
+    if (!userId) {
+      userId = crypto.randomUUID();
+      localStorage.setItem("livechat_user_id", userId);
     }
 
-    if (!started.current) {
-      const userId = getUserId();
+    // ✅ init socket ONCE
+    if (!socket) {
+      const url = process.env.NEXT_PUBLIC_SOCKET_URL;
+      if (!url) {
+        console.error("❌ NEXT_PUBLIC_SOCKET_URL missing");
+        return;
+      }
 
-      socket.emit("start_chat", { userId, name: "Guest" });
+      socket = io(url, {
+        transports: ["websocket"]
+      });
+    }
+
+    if (!startedRef.current) {
+      socket.emit("start_chat", {
+        userId,
+        name: "Guest"
+      });
+
       socket.emit("user_activity", {
         userId,
         page: window.location.pathname,
         device: getDevice()
       });
 
-      window.addEventListener("popstate", () => {
+      const handleRouteChange = () => {
         socket?.emit("user_activity", {
           userId,
           page: window.location.pathname,
           device: getDevice()
         });
-      });
+      };
 
-      started.current = true;
+      window.addEventListener("popstate", handleRouteChange);
+
+      startedRef.current = true;
+
+      return () => {
+        window.removeEventListener("popstate", handleRouteChange);
+        socket?.disconnect(); // ✅ cleanup
+        socket = null;
+      };
     }
 
     socket.on("chat_history", setMessages);
+
     socket.on("agent_reply", (text: string) => {
-      setMessages(p => [...p, { id: Date.now(), sender: "agent", text }]);
+      setMessages((prev) => [
+        ...prev,
+        { id: Date.now(), sender: "agent", text }
+      ]);
     });
 
     return () => {
@@ -78,10 +100,14 @@ export default function ChatBot() {
   }, [messages]);
 
   function send() {
-    if (!input.trim()) return;
+    if (!input.trim() || !socket) return;
 
-    setMessages(p => [...p, { id: Date.now(), sender: "user", text: input }]);
-    socket?.emit("user_message", input);
+    setMessages((prev) => [
+      ...prev,
+      { id: Date.now(), sender: "user", text: input }
+    ]);
+
+    socket.emit("user_message", input);
     setInput("");
   }
 
@@ -129,7 +155,7 @@ export default function ChatBot() {
           </div>
 
           <div style={{ flex: 1, padding: 12, overflowY: "auto" }}>
-            {messages.map(m => (
+            {messages.map((m) => (
               <div
                 key={m.id}
                 style={{
@@ -157,8 +183,8 @@ export default function ChatBot() {
           <div style={{ display: "flex", padding: 8 }}>
             <input
               value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && send()}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && send()}
               placeholder="Type message..."
               style={{
                 flex: 1,
