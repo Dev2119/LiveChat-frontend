@@ -20,6 +20,7 @@ export default function AgentPage() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [text, setText] = useState("");
 
+  /* ================= SOCKET INIT ================= */
   useEffect(() => {
     const url = process.env.NEXT_PUBLIC_SOCKET_URL!;
     const socket = io(url, { transports: ["websocket"] });
@@ -27,11 +28,13 @@ export default function AgentPage() {
 
     socket.emit("agent_join");
 
+    // Full chat list (initial + updates)
     socket.on("chat_list", (data: Chat[]) => {
       setChats(data);
       localStorage.setItem("agent_chat_list", JSON.stringify(data));
     });
 
+    // New incoming message (user or agent)
     socket.on("new_message", ({ userId, message }) => {
       setChats((prev) =>
         prev.map((c) =>
@@ -49,6 +52,7 @@ export default function AgentPage() {
 
   const activeChat = chats.find((c) => c.userId === activeId);
 
+  /* ================= SEND MESSAGE ================= */
   function sendMessage() {
     if (!text.trim() || !activeChat || !socketRef.current) return;
 
@@ -57,6 +61,7 @@ export default function AgentPage() {
       text
     });
 
+    // Optimistic UI update (instant)
     setChats((prev) =>
       prev.map((c) =>
         c.userId === activeChat.userId
@@ -71,8 +76,10 @@ export default function AgentPage() {
     setText("");
   }
 
+  /* ================= UI ================= */
   return (
     <div style={{ display: "flex", height: "100vh" }}>
+      {/* LEFT: VISITORS */}
       <div style={{ width: 300, borderRight: "1px solid #ddd" }}>
         <h3 style={{ padding: 12 }}>Visitors</h3>
 
@@ -96,6 +103,7 @@ export default function AgentPage() {
         ))}
       </div>
 
+      {/* RIGHT: CHAT */}
       <div style={{ flex: 1, padding: 20 }}>
         {activeChat ? (
           <>

@@ -58,12 +58,13 @@ export default function ChatBot() {
       setMessages(data);
     });
 
-    socket.on("agent_reply", (text: string) => {
-      setMessages((prev) => [
-        ...prev,
-        { id: Date.now(), sender: "agent", text }
-      ]);
-    });
+  socket.on("agent_reply", (text: string) => {
+  setMessages((prev) => [
+    ...prev,
+    { id: Date.now(), sender: "agent", text }
+  ]);
+});
+
 
     return () => {
       socket?.off("chat_history");
